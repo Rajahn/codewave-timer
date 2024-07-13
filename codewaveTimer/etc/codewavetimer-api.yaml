@@ -1,0 +1,38 @@
+server:
+  http:
+    host: 127.0.0.1
+    port: 9001
+    timeout: 1s
+
+data:
+  database:
+    addr: 127.0.0.1:3306
+    user: root
+    password: root
+    database: codewavedb
+    max_idle_conn : 10
+    max_open_conn: 20
+    max_idle_time: 30
+    slow_threshold_millisecond: 100
+
+  redis:
+    addr: 127.0.0.1:6379
+    password:
+    db: 0
+    pool_size: 20
+    read_timeout: 120s
+    write_timeout: 120s
+
+  scheduler:
+    workersNum: 100
+    bucketsNum: 5
+    tryLockSeconds: 70
+    tryLockGapMilliSeconds: 1000
+    successExpireSeconds: 130
+  trigger:
+    zrangeGapSeconds: 1
+    workersNum: 10000
+    slowWorkersNum: 100
+  migrator:
+    workersNum: 1000 #单节点并行协程数
+    migrateStepMinutes: 30 #每次迁移数据的时间范围step，单位：min

@@ -1,0 +1,57 @@
+syntax = "v1"
+
+type CreateTimerRequest {
+	App             string          `json:"app"`
+	Name            string          `json:"name"`
+	Status          int32           `json:"status,omitempty"`
+	Cron            string          `json:"cron"`
+	NotifyHTTPParam NotifyHTTPParam `json:"notifyHTTPParam"`
+}
+
+type EnableTimerRequest {
+	App     string `json:"app"`
+	TimerId int64  `json:"timerId,omitempty"`
+}
+
+type DisableTimerRequest {
+	App     string `json:"app"`
+	TimerId int64  `json:"timerId,omitempty"`
+}
+
+type DeleteTimerRequest {
+	App     string `json:"app"`
+	TimerId int64  `json:"timerId,omitempty"`
+}
+
+type NotifyHTTPParam {
+	Url     string            `json:"url"`
+	Method  string            `json:"method"`
+	Headers map[string]string `json:"headers"`
+	Body    string            `json:"body"`
+}
+
+type Response {
+	Code    int32  `json:"code"`
+	Message string `json:"message"`
+	Data    string `json:"data"`
+	TraceID string `json:"trace_id"`
+}
+
+// 定义服务
+service timer-api {
+	@doc "创建一个新的定时任务"
+	@handler createTimerHandler
+	post /api/timer/create (CreateTimerRequest) returns (Response)
+}
+
+service timer-api {
+	@doc "启动定时任务"
+	@handler enableTimerHandler
+	post /api/timer/enable (EnableTimerRequest) returns (Response)
+}
+
+service timer-api {
+	@doc "停止定时任务"
+	@handler disableTimerHandler
+	post /api/timer/disable (DisableTimerRequest) returns (Response)
+}
