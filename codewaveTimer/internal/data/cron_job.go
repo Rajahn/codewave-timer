@@ -39,6 +39,15 @@ func (r *jobRepo) FindByID(ctx context.Context, timerId int64) (*biz.JobTimer, e
 	return &timer, nil
 }
 
+func (r *jobRepo) FindByIDs(ctx context.Context, int64s []int64) ([]*biz.JobTimer, error) {
+	var timers []*biz.JobTimer
+	err := r.data.Db.WithContext(ctx).Where("id in (?)", int64s).Find(&timers).Error
+	if err != nil {
+		return nil, err
+	}
+	return timers, nil
+}
+
 func (r *jobRepo) FindByStatus(ctx context.Context, status int) ([]*biz.JobTimer, error) {
 	var timers []*biz.JobTimer
 	err := r.data.Db.WithContext(ctx).Where("status = ?", status).Find(&timers).Error

@@ -15,6 +15,19 @@ type TaskTimer struct {
 	Status   int    `gorm:"column:status;NOT NULL"`        // 当前状态
 }
 
+type TaskTimerDetail struct {
+	TaskID          int64
+	App             string
+	TimerID         int64
+	Output          string
+	RunTimer        int64
+	CostTime        int
+	DiffTime        int
+	Status          int
+	JobStatus       int
+	NotifyHTTPParam string
+}
+
 func (t *TaskTimer) TableName() string {
 	return "cron_task"
 }

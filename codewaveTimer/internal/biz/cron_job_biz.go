@@ -36,6 +36,7 @@ type JobRepo interface {
 	Save(context.Context, *JobTimer) (*JobTimer, error)
 	Update(context.Context, *JobTimer) (*JobTimer, error)
 	FindByID(context.Context, int64) (*JobTimer, error)
+	FindByIDs(context.Context, []int64) ([]*JobTimer, error)
 	FindByStatus(context.Context, int) ([]*JobTimer, error)
 	Delete(context.Context, int64) error
 }

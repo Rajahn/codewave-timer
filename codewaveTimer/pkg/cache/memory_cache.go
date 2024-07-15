@@ -2,72 +2,83 @@ package cache
 
 import (
 	"container/heap"
+	"errors"
+	"fmt"
 	"sync"
+	"time"
 )
 
-// Task represents a task with a TimerID and RunTimer
-type Task struct {
-	TimerID  int64
-	RunTimer int64
+// Timer represents a timer with its details
+type Timer struct {
+	TimerID         int64
+	RunTimer        int64
+	Status          int
+	App             string
+	NotifyHTTPParam string
+	CreateTime      *time.Time
 }
 
-// TaskCache is a concurrent safe cache for tasks
-type TaskCache struct {
+// TaskMemCache is a concurrent safe cache for tasks
+type TaskMemCache struct {
 	tasks      sync.Map
-	taskHeap   *TaskHeap
+	timerHeap  *TimerHeap
 	heapLocker sync.Mutex
 }
 
-// NewTaskCache creates a new TaskCache
-func NewTaskCache() *TaskCache {
-	return &TaskCache{
-		taskHeap: &TaskHeap{},
+// NewTaskMemCache creates a new TaskMemCache
+func NewTaskMemCache() *TaskMemCache {
+	return &TaskMemCache{
+		timerHeap: &TimerHeap{},
 	}
 }
 
-// Set stores a task in the cache
-func (c *TaskCache) Set(key int64, value Task) {
-	c.tasks.Store(key, value)
+// Set stores a timer in the cache
+func (c *TaskMemCache) Set(timer Timer) {
+	c.tasks.Store(timer.TimerID, timer)
 	c.heapLocker.Lock()
-	heap.Push(c.taskHeap, value)
+	heap.Push(c.timerHeap, timer)
 	c.heapLocker.Unlock()
 }
 
-// Get retrieves a task from the cache
-func (c *TaskCache) Get(key int64) (Task, bool) {
-	value, ok := c.tasks.Load(key)
+// Get retrieves a timer from the cache
+func (c *TaskMemCache) Get(timerID int64) (Timer, bool) {
+	value, ok := c.tasks.Load(timerID)
 	if ok {
-		return value.(Task), true
+		return value.(Timer), true
 	}
-	return Task{}, false
+	return Timer{}, false
 }
 
 // RangeQuery performs a range query on the heap
-func (c *TaskCache) RangeQuery(start, end int64) []Task {
+func (c *TaskMemCache) RangeQuery(start, end int64) ([]Timer, error) {
 	c.heapLocker.Lock()
 	defer c.heapLocker.Unlock()
 
-	var result []Task
-	for _, task := range *c.taskHeap {
-		if task.RunTimer >= start && task.RunTimer <= end {
-			result = append(result, task)
+	var result []Timer
+	for _, timer := range *c.timerHeap {
+		if timer.CreateTime.Unix() >= start && timer.CreateTime.Unix() <= end {
+			result = append(result, timer)
 		}
 	}
-	return result
+	if len(result) == 0 {
+		return nil, errors.New("no timer found")
+	}
+	fmt.Print("RangeQuery result: ", result)
+	return result, nil
 }
 
-// TaskHeap is a min-heap of tasks
-type TaskHeap []Task
+// TimerHeap is a min-heap of timers
+type TimerHeap []Timer
 
-func (h TaskHeap) Len() int           { return len(h) }
-func (h TaskHeap) Less(i, j int) bool { return h[i].RunTimer < h[j].RunTimer }
-func (h TaskHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h TimerHeap) Len() int           { return len(h) }
+func (h TimerHeap) Less(i, j int) bool { return h[i].CreateTime.Before(*h[j].CreateTime) }
+func (h TimerHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
-func (h *TaskHeap) Push(x interface{}) {
-	*h = append(*h, x.(Task))
+func (h *TimerHeap) Push(x interface{}) {
+	*h = append(*h, x.(Timer))
 }
 
-func (h *TaskHeap) Pop() interface{} {
+func (h *TimerHeap) Pop() interface{} {
 	old := *h
 	n := len(old)
 	x := old[n-1]

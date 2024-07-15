@@ -5,6 +5,7 @@ import (
 	"codewave-timer/codewaveTimer/internal/config"
 	"codewave-timer/codewaveTimer/internal/constant"
 	"codewave-timer/codewaveTimer/internal/utils"
+	"codewave-timer/codewaveTimer/pkg/cache"
 	"codewave-timer/codewaveTimer/pkg/log"
 	"context"
 	"fmt"
@@ -15,30 +16,32 @@ import (
 )
 
 type TriggerUseCase struct {
-	confData  *config.Data
-	timerRepo JobRepo
-	taskRepo  TimerTaskRepo
-	taskCache TaskCache
-	pool      utils.WorkerPool
-	slowPool  utils.WorkerPool
-	executor  *ExecutorUseCase
+	confData     *config.Data
+	timerRepo    JobRepo
+	taskRepo     TimerTaskRepo
+	taskCache    TaskCache
+	taskMemCache *cache.TaskMemCache
+	pool         utils.WorkerPool
+	slowPool     utils.WorkerPool
+	executor     *ExecutorUseCase
 }
 
 func NewTriggerUseCase(confData *config.Data, timerRepo JobRepo, taskRepo TimerTaskRepo, taskCache TaskCache, executorUseCase *ExecutorUseCase) *TriggerUseCase {
 	return &TriggerUseCase{
-		confData:  confData,
-		timerRepo: timerRepo,
-		taskRepo:  taskRepo,
-		taskCache: taskCache,
-		pool:      utils.NewGoWorkerPool(confData.Trigger.WorkersNum),
-		slowPool:  utils.NewGoWorkerPool(confData.Trigger.SlowWorkersNum),
-		executor:  executorUseCase,
+		confData:     confData,
+		timerRepo:    timerRepo,
+		taskRepo:     taskRepo,
+		taskCache:    taskCache,
+		taskMemCache: cache.NewTaskMemCache(),
+		pool:         utils.NewGoWorkerPool(confData.Trigger.WorkersNum),
+		slowPool:     utils.NewGoWorkerPool(confData.Trigger.SlowWorkersNum),
+		executor:     executorUseCase,
 	}
 }
 
 func (t *TriggerUseCase) Work(ctx context.Context, minuteBucketKey string, ack func()) error {
 
-	// 进行为时一分钟的 zrange 处理
+	// trigger的每次触发,负责对指定桶号下, 一分钟的zrange task进行处理
 	startTime, err := getStartMinute(minuteBucketKey)
 	if err != nil {
 		return err
@@ -51,6 +54,15 @@ func (t *TriggerUseCase) Work(ctx context.Context, minuteBucketKey string, ack f
 	defer notifier.Close()
 
 	endTime := startTime.Add(time.Minute)
+
+	log.WarnContextf(ctx, "start trigger, key: %s, start: %s, end: %s", minuteBucketKey, startTime, endTime)
+
+	// 预加载任务到内存
+	err = t.preloadTasks(ctx, minuteBucketKey, startTime, endTime)
+	if err != nil {
+		return err
+	}
+
 	var wg sync.WaitGroup
 	for range ticker.C {
 		select {
@@ -85,11 +97,51 @@ func (t *TriggerUseCase) Work(ctx context.Context, minuteBucketKey string, ack f
 	return nil
 }
 
+func (t *TriggerUseCase) preloadTasks(ctx context.Context, key string, start, end time.Time) error {
+
+	bucket, err := getBucket(key)
+	if err != nil {
+		return err
+	}
+
+	tasks, err := t.getTasksByTime(ctx, key, bucket, start, end)
+
+	timerIDMap := make(map[int64]struct{})
+	timerIDs := make([]int64, 0, len(tasks))
+	for _, task := range tasks {
+		if _, exists := timerIDMap[task.TimerID]; !exists {
+			timerIDMap[task.TimerID] = struct{}{}
+			timerIDs = append(timerIDs, task.TimerID)
+		}
+	}
+
+	// 根据任务 ID 从数据库获取任务详情 timerid-详情
+	jobs, err := t.timerRepo.FindByIDs(ctx, timerIDs)
+	if err != nil {
+		return fmt.Errorf("get timer failed", err)
+	}
+
+	// 将任务详情加载到内存缓存, 以timerid为key
+	for _, job := range jobs {
+		t.taskMemCache.Set(cache.Timer{
+			TimerID:         job.TimerId,
+			Status:          job.Status,
+			App:             job.App,
+			NotifyHTTPParam: job.NotifyHTTPParam,
+			CreateTime:      job.CreateTime,
+		})
+	}
+	log.InfoContextf(ctx, "preload tasks success, key: %s, tasks: %d", key, len(tasks))
+	return nil
+}
+
 func (t *TriggerUseCase) handleBatch(ctx context.Context, key string, start, end time.Time) error {
 	bucket, err := getBucket(key)
 	if err != nil {
 		return err
 	}
+
+	log.WarnContextf(ctx, "handleBatch: %s, %d, %s, %s", key, bucket, start, end)
 
 	tasks, err := t.getTasksByTime(ctx, key, bucket, start, end)
 	if err != nil || len(tasks) == 0 {
@@ -104,7 +156,17 @@ func (t *TriggerUseCase) handleBatch(ctx context.Context, key string, start, end
 	for _, task := range tasks {
 		task := task
 		if err := t.pool.Submit(func() {
-			if err := t.executor.Work(ctx, utils.UnionTimerIDUnix(uint(task.TimerID), task.RunTimer)); err != nil {
+			curTask, ok := t.taskMemCache.Get(task.TimerID)
+			useCache := true
+			//TODO
+			if !ok {
+				log.ErrorContextf(ctx, "task not found in memory cache, timerID: %d", task.TimerID)
+				useCache = false
+			} else {
+				log.WarnContextf(ctx, "task found in memory cache, timerID: %d", task.TimerID)
+			}
+
+			if err := t.executor.Work(ctx, utils.UnionTimerIDUnix(uint(task.TimerID), task.RunTimer), curTask, useCache); err != nil {
 				log.ErrorContextf(ctx, "executor work failed, err: %v", err)
 			}
 		}); err != nil {

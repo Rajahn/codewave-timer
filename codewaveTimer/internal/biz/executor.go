@@ -6,6 +6,7 @@ import (
 	"codewave-timer/codewaveTimer/internal/constant"
 	"codewave-timer/codewaveTimer/internal/types"
 	"codewave-timer/codewaveTimer/internal/utils"
+	"codewave-timer/codewaveTimer/pkg/cache"
 	"codewave-timer/codewaveTimer/pkg/log"
 	"context"
 	"encoding/json"
@@ -32,26 +33,33 @@ func NewExecutorUseCase(confData *config.Data, timerRepo JobRepo, taskRepo Timer
 	}
 }
 
-func (w *ExecutorUseCase) Work(ctx context.Context, timerIDUnixKey string) error {
-	// 拿到消息，查询一次完整的 timer 定义
+func (w *ExecutorUseCase) Work(ctx context.Context, timerIDUnixKey string, timer cache.Timer, useCache bool) error {
+	// 拿到消息，如果cache为空, 则兜底查询一次完整的 timer 定义
 	timerID, unix, err := utils.SplitTimerIDUnix(timerIDUnixKey)
 	if err != nil {
 		return err
 	}
-	return w.executeAndPostProcess(ctx, timerID, unix)
+	return w.executeAndPostProcess(ctx, timerID, unix, timer, useCache)
 }
 
-func (w *ExecutorUseCase) executeAndPostProcess(ctx context.Context, timerID int64, unix int64) error {
-	// 查询 timer 完整的定义，执行回调
-	timer, err := w.timerRepo.FindByID(ctx, timerID)
-	if err != nil {
-		return fmt.Errorf("get timer failed, id: %d, err: %w", timerID, err)
-	}
+func (w *ExecutorUseCase) executeAndPostProcess(ctx context.Context, timerID int64, unix int64, timer cache.Timer, useCache bool) error {
+	if !useCache {
+		// 查询 timer 完整的定义，执行回调
+		temptimer, err := w.timerRepo.FindByID(ctx, timerID)
+		if err != nil {
+			return fmt.Errorf("get timer failed, id: %d, err: %w", timerID, err)
+		}
 
-	// 定时器已经处于去激活态，则无需处理任务
-	if timer.Status != constant.Enabled.ToInt() {
-		log.WarnContextf(ctx, "timer has alread been unabled, timerID: %d", timerID)
-		return nil
+		// 定时器已经处于去激活态，则无需处理任务
+		if temptimer.Status != constant.Enabled.ToInt() {
+			log.WarnContextf(ctx, "timer has alread been unabled, timerID: %d", timerID)
+			return nil
+		}
+
+		timer = cache.Timer{
+			App:             temptimer.App,
+			NotifyHTTPParam: temptimer.NotifyHTTPParam,
+		}
 	}
 
 	execTime := time.Now()
@@ -59,7 +67,7 @@ func (w *ExecutorUseCase) executeAndPostProcess(ctx context.Context, timerID int
 	return w.postProcess(ctx, resp, err, timer.App, uint(timerID), unix, execTime)
 }
 
-func (w *ExecutorUseCase) execute(ctx context.Context, timer *JobTimer) (map[string]interface{}, error) {
+func (w *ExecutorUseCase) execute(ctx context.Context, timer cache.Timer) (map[string]interface{}, error) {
 	var (
 		resp map[string]interface{}
 		err  error

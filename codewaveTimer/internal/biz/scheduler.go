@@ -76,11 +76,11 @@ func (w *SchedulerUseCase) handleSlice(ctx context.Context, bucketID int) {
 	log.InfoContextf(ctx, "scheduler_%v start: %v", bucketID, time.Now())
 	now := time.Now()
 	//先把上一分钟的任务重复拉一遍, 避免因为trigger异常导致任务延迟
-	if err := w.pool.Submit(func() {
-		w.asyncHandleSlice(ctx, now.Add(-time.Minute), bucketID)
-	}); err != nil {
-		log.ErrorContextf(ctx, "[handle slice] submit task failed, err: %v", err)
-	}
+	//if err := w.pool.Submit(func() {
+	//	w.asyncHandleSlice(ctx, now.Add(-time.Minute), bucketID)
+	//}); err != nil {
+	//	log.ErrorContextf(ctx, "[handle slice] submit task failed, err: %v", err)
+	//}
 
 	if err := w.pool.Submit(func() {
 		w.asyncHandleSlice(ctx, now, bucketID)
