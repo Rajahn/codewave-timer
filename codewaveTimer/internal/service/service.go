@@ -14,6 +14,7 @@ type CodewaveTimerService struct {
 	timerUC     *biz.CronJobUseCase
 	schedulerUC *biz.SchedulerUseCase
 	migratorUC  *biz.MigratorUseCase
+	triggerUC   *biz.TriggerUseCase
 }
 
 func NewCodewaveTimerService(timerUC *biz.CronJobUseCase, schedulerUC *biz.SchedulerUseCase, migratorUC *biz.MigratorUseCase) *CodewaveTimerService {
@@ -61,6 +62,7 @@ func (s *CodewaveTimerService) EnableTimer(ctx context.Context, req *types.Enabl
 
 func (s *CodewaveTimerService) DisableTimer(ctx context.Context, req *types.DisableTimerRequest) (*types.Response, error) {
 	err := s.timerUC.DisableTimer(ctx, req.App, req.TimerId)
+	s.triggerUC.DisableCache(req.TimerId)
 	if err != nil {
 		return nil, errors.New("disable timer failed")
 	}

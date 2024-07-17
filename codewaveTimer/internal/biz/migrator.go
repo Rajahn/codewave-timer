@@ -13,18 +13,18 @@ import (
 )
 
 type MigratorUseCase struct {
-	confData  *config.Data
-	timerRepo JobRepo
-	taskRepo  TimerTaskRepo
-	taskCache TaskCache
+	confData   *config.Data
+	timerRepo  JobRepo
+	taskRepo   TimerTaskRepo
+	redisCache RedisCache
 }
 
-func NewMigratorUseCase(confData *config.Data, timerRepo JobRepo, taskRepo TimerTaskRepo, taskCache TaskCache) *MigratorUseCase {
+func NewMigratorUseCase(confData *config.Data, timerRepo JobRepo, taskRepo TimerTaskRepo, redisCache RedisCache) *MigratorUseCase {
 	return &MigratorUseCase{
-		confData:  confData,
-		timerRepo: timerRepo,
-		taskRepo:  taskRepo,
-		taskCache: taskCache,
+		confData:   confData,
+		timerRepo:  timerRepo,
+		taskRepo:   taskRepo,
+		redisCache: redisCache,
 	}
 }
 
@@ -32,13 +32,13 @@ func (uc *MigratorUseCase) BatchMigratorTimer(ctx context.Context) error {
 	//查出全部已激活的cron_job
 	timers, err := uc.timerRepo.FindByStatus(ctx, constant.Enabled.ToInt())
 	if err != nil {
-		log.ErrorContextf(ctx, "批量迁移Timer失败，查询数据库失败，err:: %v", err)
+		log.ErrorLog(ctx, "批量迁移Timer失败，查询数据库失败，err:: %v", err)
 		return err
 	}
 	for _, timer := range timers {
 		err = uc.MigratorTimer(ctx, timer)
 		if err != nil {
-			log.ErrorContextf(ctx, "批量迁移，迁移单个Timer失败，timerId:%s", timer.TimerId)
+			log.ErrorLog(ctx, "批量迁移，迁移单个Timer失败，timerId:%s", timer.TimerId)
 		}
 		time.Sleep(5 * time.Second)
 	}
@@ -57,7 +57,7 @@ func (uc *MigratorUseCase) MigratorTimer(ctx context.Context, timer *JobTimer) e
 	end := start.Add(2 * time.Duration(uc.confData.Migrator.MigrateStepMinutes) * time.Minute)
 	executeTimes, err := utils.NextsBefore(timer.Cron, end)
 	if err != nil {
-		log.ErrorContextf(ctx, "get executeTimes failed, err: %v", err)
+		log.ErrorLog(ctx, "get executeTimes failed, err: %v", err)
 		return err
 	}
 
@@ -65,13 +65,13 @@ func (uc *MigratorUseCase) MigratorTimer(ctx context.Context, timer *JobTimer) e
 	tasks := timer.BatchTasksFromTimer(executeTimes)
 	// 基于 timer_id + run_timer unix时间戳 唯一键，保证任务不被重复插入
 	if err := uc.taskRepo.BatchSave(ctx, tasks); err != nil {
-		log.ErrorContextf(ctx, "DB存储tasks失败: %v", err)
+		log.ErrorLog(ctx, "DB存储tasks失败: %v", err)
 		return err
 	}
 
 	// 执行时机加入 redis 跳表
-	if err := uc.taskCache.BatchCreateTasks(ctx, tasks); err != nil {
-		log.ErrorContextf(ctx, "Zset存储tasks失败: %v", err)
+	if err := uc.redisCache.BatchCreateTasks(ctx, tasks); err != nil {
+		log.ErrorLog(ctx, "Zset存储tasks失败: %v", err)
 		return err
 	}
 	return nil

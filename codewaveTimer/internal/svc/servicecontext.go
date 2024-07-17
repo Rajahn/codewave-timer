@@ -24,7 +24,7 @@ type ServiceContext struct {
 	TaskRepo  biz.TimerTaskRepo
 	TxManager biz.Transaction
 
-	TaskCache   *data.RedisCache
+	RedisCache  *data.RedisCache
 	CronJobUC   *biz.CronJobUseCase
 	SchedulerUC *biz.SchedulerUseCase
 	MigratorUC  *biz.MigratorUseCase
@@ -53,14 +53,14 @@ func NewServiceContext(c config.GlobalConfig) *ServiceContext {
 	// 初始化仓库
 	jobRepo := data.NewJobRepo(dataLayer)
 	taskRepo := data.NewTaskRepo(dataLayer)
-	taskCache := data.NewRedisCache(&c.Data, dataLayer)
+	redisCache := data.NewRedisCache(&c.Data, dataLayer)
 
 	// 初始化业务逻辑层
-	migratorUC := biz.NewMigratorUseCase(&c.Data, jobRepo, taskRepo, taskCache)
-	cronJobUC := biz.NewCronJobUseCase(&c.Data, jobRepo, taskRepo, taskCache, dataLayer, migratorUC)
-	executorUC := biz.NewExecutorUseCase(&c.Data, jobRepo, taskRepo, taskCache, utils.NewHttpClient())
-	triggerUC := biz.NewTriggerUseCase(&c.Data, jobRepo, taskRepo, taskCache, executorUC)
-	schedulerUC := biz.NewSchedulerUseCase(&c.Data, jobRepo, taskRepo, taskCache, triggerUC)
+	migratorUC := biz.NewMigratorUseCase(&c.Data, jobRepo, taskRepo, redisCache)
+	cronJobUC := biz.NewCronJobUseCase(&c.Data, jobRepo, taskRepo, redisCache, dataLayer, migratorUC)
+	executorUC := biz.NewExecutorUseCase(&c.Data, jobRepo, taskRepo, utils.NewHttpClient())
+	triggerUC := biz.NewTriggerUseCase(&c.Data, jobRepo, taskRepo, redisCache, executorUC)
+	schedulerUC := biz.NewSchedulerUseCase(&c.Data, jobRepo, taskRepo, redisCache, triggerUC)
 
 	// 初始化服务层
 	service := service.NewCodewaveTimerService(cronJobUC, schedulerUC, migratorUC)
@@ -102,7 +102,7 @@ func NewServiceContext(c config.GlobalConfig) *ServiceContext {
 		Cache:          cacheClient,
 		JobRepo:        jobRepo,
 		TaskRepo:       taskRepo,
-		TaskCache:      taskCache,
+		RedisCache:     redisCache,
 		CronJobUC:      cronJobUC,
 		SchedulerUC:    schedulerUC,
 		MigratorUC:     migratorUC,

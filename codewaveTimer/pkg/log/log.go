@@ -57,14 +57,14 @@ func logf(ctx context.Context, level LogLevel, format string, args ...interface{
 	}
 }
 
-func ErrorContextf(ctx context.Context, format string, args ...interface{}) {
+func ErrorLog(ctx context.Context, format string, args ...interface{}) {
 	logf(ctx, ERROR, format, args...)
 }
 
-func WarnContextf(ctx context.Context, format string, args ...interface{}) {
+func WarnLog(ctx context.Context, format string, args ...interface{}) {
 	logf(ctx, WARN, format, args...)
 }
 
-func InfoContextf(ctx context.Context, format string, args ...interface{}) {
+func InfoLog(ctx context.Context, format string, args ...interface{}) {
 	logf(ctx, INFO, format, args...)
 }

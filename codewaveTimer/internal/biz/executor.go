@@ -6,11 +6,12 @@ import (
 	"codewave-timer/codewaveTimer/internal/constant"
 	"codewave-timer/codewaveTimer/internal/types"
 	"codewave-timer/codewaveTimer/internal/utils"
+	"codewave-timer/codewaveTimer/pkg/cache"
 	"codewave-timer/codewaveTimer/pkg/log"
 	"context"
 	"encoding/json"
 	"fmt"
-
+	"strconv"
 	"time"
 )
 
@@ -23,7 +24,7 @@ type ExecutorUseCase struct {
 }
 
 // NewUserUseCase new a User usecase.
-func NewExecutorUseCase(confData *config.Data, timerRepo JobRepo, taskRepo TimerTaskRepo, taskCache TaskCache, httpClient *utils.JSONClient) *ExecutorUseCase {
+func NewExecutorUseCase(confData *config.Data, timerRepo JobRepo, taskRepo TimerTaskRepo, httpClient *utils.JSONClient) *ExecutorUseCase {
 	return &ExecutorUseCase{
 		confData:   confData,
 		timerRepo:  timerRepo,
@@ -32,25 +33,31 @@ func NewExecutorUseCase(confData *config.Data, timerRepo JobRepo, taskRepo Timer
 	}
 }
 
-func (w *ExecutorUseCase) Work(ctx context.Context, timerIDUnixKey string) error {
+func (w *ExecutorUseCase) Work(ctx context.Context, timerIDUnixKey string, localCache *cache.CodewaveCache) error {
 	// 拿到消息，查询一次完整的 timer 定义
 	timerID, unix, err := utils.SplitTimerIDUnix(timerIDUnixKey)
 	if err != nil {
 		return err
 	}
-	return w.executeAndPostProcess(ctx, timerID, unix)
+	return w.executeAndPostProcess(ctx, timerID, unix, localCache)
 }
 
-func (w *ExecutorUseCase) executeAndPostProcess(ctx context.Context, timerID int64, unix int64) error {
+func (w *ExecutorUseCase) executeAndPostProcess(ctx context.Context, timerID int64, unix int64, localCache *cache.CodewaveCache) error {
 	// 查询 timer 完整的定义，执行回调
-	timer, err := w.timerRepo.FindByID(ctx, timerID)
-	if err != nil {
-		return fmt.Errorf("get timer failed, id: %d, err: %w", timerID, err)
+	//timer, err := w.timerRepo.FindByID(ctx, timerID)
+	value, err := localCache.Get(strconv.FormatInt(timerID, 10))
+	timer, ok := value.(*JobTimer)
+	if !ok || err != nil {
+		log.WarnLog(ctx, "timer not found in local cache, timerID: %d", timerID)
+		timer, err = w.timerRepo.FindByID(ctx, timerID)
+		if err != nil {
+			return fmt.Errorf("get timer failed, id: %d, err: %w", timerID, err)
+		}
 	}
 
 	// 定时器已经处于去激活态，则无需处理任务
 	if timer.Status != constant.Enabled.ToInt() {
-		log.WarnContextf(ctx, "timer has alread been unabled, timerID: %d", timerID)
+		log.WarnLog(ctx, "timer has alread been unabled, timerID: %d", timerID)
 		return nil
 	}
 

@@ -50,7 +50,7 @@ func New(conf Config) (*CodewaveCache, error) {
 	return cache, nil
 }
 
-func NewCache(shards int) (*CodewaveCache, error) {
+func NewCache(shards int) *CodewaveCache {
 	// init cache object
 	cache := &CodewaveCache{
 		shards:    make([]*cacheShard, shards),
@@ -63,7 +63,7 @@ func NewCache(shards int) (*CodewaveCache, error) {
 	for i := 0; i < shards; i++ {
 		cache.shards[i] = newCacheShard(i, onRemove, cache.close)
 	}
-	return cache, nil
+	return cache
 }
 
 // Set add k/v or modify existing k/v
