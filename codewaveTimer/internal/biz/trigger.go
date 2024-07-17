@@ -51,6 +51,9 @@ func (t *TriggerUseCase) Work(ctx context.Context, minuteBucketKey string, ack f
 	defer notifier.Close()
 
 	endTime := startTime.Add(time.Minute)
+
+	//TODO 此时建立下一分钟的缓存, JobID-Job详情
+
 	var wg sync.WaitGroup
 	for range ticker.C {
 		select {
@@ -67,7 +70,7 @@ func (t *TriggerUseCase) Work(ctx context.Context, minuteBucketKey string, ack f
 				notifier.Put(err)
 			}
 		}(startTime)
-
+		//每个协程启动后, 更新一次startTime, 启动下一个协程
 		if startTime = startTime.Add(time.Duration(t.confData.Trigger.ZrangeGapSeconds) * time.Second); startTime.Equal(endTime) || startTime.After(endTime) {
 			break
 		}

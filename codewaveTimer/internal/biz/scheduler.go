@@ -73,9 +73,11 @@ func (w *SchedulerUseCase) handleSlice(ctx context.Context, bucketID int) {
 			log.ErrorContextf(ctx, "handleSlice %v run err. Recovered from panic:%v", bucketID, r)
 		}
 	}()
+
 	log.InfoContextf(ctx, "scheduler_%v start: %v", bucketID, time.Now())
 	now := time.Now()
-	//先把上一分钟的任务重复拉一遍, 避免因为trigger异常导致任务延迟
+	//先把上一分钟的任务重复拉一遍, 避免因scheduler尚未触发完全部桶时宕机, 重启后所有未被触发的桶中任务全部丢失
+	//配合分布式锁延时, 避免重复触发
 	if err := w.pool.Submit(func() {
 		w.asyncHandleSlice(ctx, now.Add(-time.Minute), bucketID)
 	}); err != nil {
@@ -103,7 +105,7 @@ func (w *SchedulerUseCase) asyncHandleSlice(ctx context.Context, t time.Time, bu
 	}
 
 	log.InfoContextf(ctx, "get scheduler lock success, key: %s", utils.GetTimeBucketLockKey(t, bucketID))
-	//work执行成功后, 延长锁的释放时间
+	//如果work没有成功执行, 应允许其他trigger协程抢锁, 默认释放时间70s, work执行成功后, 延长锁的释放时间为130s 确保即便发生重启,重复拉取上一分钟任务时不会反复执行已经触发过的任务
 	ack := func() {
 		if err := locker.DelayExpire(ctx, int64(w.confData.Scheduler.SuccessExpireSeconds)); err != nil {
 			log.ErrorContextf(ctx, "expire lock failed, lock key: %s, err: %v", utils.GetTimeBucketLockKey(t, bucketID), err)
